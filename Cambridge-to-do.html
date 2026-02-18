@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cambridge Explorer Trail</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Google Fonts & Material Symbols -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-rounded {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        const Icon = ({ name, className = "" }) => (
+            <span className={`material-symbols-rounded ${className}`}>
+                {name}
+            </span>
+        );
+
+        const CAMBRIDGE_STOPS = [
+          {
+            id: 'kings-college',
+            name: "King's College",
+            type: 'landmark',
+            lat: 52.2048,
+            lng: 0.1165,
+            image: 'https://images.unsplash.com/photo-1590500155209-66939942472d?auto=format&fit=crop&q=80&w=400',
+            info: 'One of the most famous colleges in the world, known for its incredible chapel and gothic architecture.'
+          },
+          {
+            id: 'corpus-clock',
+            name: 'The Corpus Clock',
+            type: 'landmark',
+            lat: 52.20412,
+            lng: 0.11796,
+            image: 'https://images.unsplash.com/photo-1626082929543-5bab0f09074a?auto=format&fit=crop&q=80&w=400', 
+            info: 'The famous "Time Eater" clock at the corner of Bene\'t Street. Look for the Chronophage grasshopper on top! It was unveiled in 2008 by Stephen Hawking.'
+          },
+          {
+            id: 'zoology-museum',
+            name: 'University Museum of Zoology',
+            type: 'landmark',
+            lat: 52.2030,
+            lng: 0.1195,
+            image: 'https://images.unsplash.com/photo-1551817830-9588fe90e719?auto=format&fit=crop&q=80&w=400',
+            info: 'Home to thousands of specimens, including those collected by Charles Darwin.'
+          },
+          {
+            id: 'pizza-pilgrims',
+            name: 'Pizza Pilgrims',
+            type: 'restaurant',
+            lat: 52.2056,
+            lng: 0.1192,
+            image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&q=80&w=400',
+            info: 'Traditional Neapolitan pizza located right in the city center near the Market.'
+          },
+          {
+            id: 'smoke-works',
+            name: 'SmokeWorks',
+            type: 'restaurant',
+            lat: 52.2036,
+            lng: 0.1188,
+            image: 'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?auto=format&fit=crop&q=80&w=400',
+            info: 'Slow-cooked BBQ, pulled pork, and amazing ribs on Free School Lane.'
+          },
+          {
+            id: 'kfc',
+            name: 'KFC Cambridge',
+            type: 'restaurant',
+            lat: 52.2045,
+            lng: 0.1245,
+            image: 'https://images.unsplash.com/photo-1513639776629-7b61b0ac49cb?auto=format&fit=crop&q=80&w=400',
+            info: 'Quick bite located on East Road/Christ\'s Lane area.'
+          },
+          {
+            id: 'premier-inn',
+            name: 'Premier Inn Cambridge',
+            type: 'hotel',
+            lat: 52.2050,
+            lng: 0.1255,
+            image: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&q=80&w=400',
+            info: 'Your home base for the trip. Perfect for a rest after exploring the city.'
+          }
+        ];
+
+        const App = () => {
+          const [visited, setVisited] = useState(() => {
+            const saved = localStorage.getItem('cambridge_visited');
+            return saved ? JSON.parse(saved) : [];
+          });
+
+          const [mapCenter, setMapCenter] = useState(() => {
+            const saved = localStorage.getItem('cambridge_map_center');
+            return saved ? JSON.parse(saved) : { lat: 52.2045, lng: 0.1190 };
+          });
+
+          const [zoom, setZoom] = useState(() => {
+            const saved = localStorage.getItem('cambridge_zoom');
+            return saved ? JSON.parse(saved) : 17;
+          });
+
+          const [selectedStar, setSelectedStar] = useState(null);
+          const [confirmingStop, setConfirmingStop] = useState(null);
+          const [activeInfo, setActiveInfo] = useState(null);
+          const [showResetConfirm, setShowResetConfirm] = useState(false);
+          
+          const mapContainerRef = useRef(null);
+          const isDragging = useRef(false);
+          const lastMousePos = useRef({ x: 0, y: 0 });
+          const audioRef = useRef(null);
+
+          useEffect(() => {
+            localStorage.setItem('cambridge_visited', JSON.stringify(visited));
+          }, [visited]);
+
+          useEffect(() => {
+            localStorage.setItem('cambridge_map_center', JSON.stringify(mapCenter));
+          }, [mapCenter]);
+
+          useEffect(() => {
+            localStorage.setItem('cambridge_zoom', JSON.stringify(zoom));
+          }, [zoom]);
+
+          useEffect(() => {
+            audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          }, []);
+
+          const getPixelPosition = (lat, lng) => {
+            if (!mapContainerRef.current) return { x: 0, y: 0 };
+            const { width, height } = mapContainerRef.current.getBoundingClientRect();
+            const scale = Math.pow(2, zoom) * 0.0078;
+            const x = (lng - mapCenter.lng) * scale * width + width / 2;
+            const y = (mapCenter.lat - lat) * scale * height + height / 2;
+            return { x, y };
+          };
+
+          const handleDragStart = (e) => {
+            isDragging.current = true;
+            lastMousePos.current = { 
+              x: e.clientX || e.touches?.[0].clientX, 
+              y: e.clientY || e.touches?.[0].clientY 
+            };
+          };
+
+          const handleDragMove = (e) => {
+            if (!isDragging.current) return;
+            const clientX = e.clientX || e.touches?.[0].clientX;
+            const clientY = e.clientY || e.touches?.[0].clientY;
+            const dx = clientX - lastMousePos.current.x;
+            const dy = clientY - lastMousePos.current.y;
+            const scale = Math.pow(2, zoom) * 0.0078;
+            const { width, height } = mapContainerRef.current.getBoundingClientRect();
+
+            setMapCenter(prev => ({
+              lat: prev.lat + dy / (scale * height),
+              lng: prev.lng - dx / (scale * width)
+            }));
+
+            lastMousePos.current = { x: clientX, y: clientY };
+          };
+
+          const handleDragEnd = () => {
+            isDragging.current = false;
+          };
+
+          const findRandom = () => {
+            const unvisited = CAMBRIDGE_STOPS.filter(s => !visited.includes(s.id));
+            const target = unvisited.length > 0 
+              ? unvisited[Math.floor(Math.random() * unvisited.length)]
+              : CAMBRIDGE_STOPS[Math.floor(Math.random() * CAMBRIDGE_STOPS.length)];
+            
+            setMapCenter({ lat: target.lat, lng: target.lng });
+            setSelectedStar(target);
+          };
+
+          const completeStop = (stop) => {
+            audioRef.current?.play().catch(() => {});
+            if ('vibrate' in navigator) navigator.vibrate(200);
+            setVisited(prev => [...prev, stop.id]);
+            setActiveInfo(stop);
+            setConfirmingStop(null);
+            setSelectedStar(null);
+          };
+
+          const resetProgress = () => {
+            setVisited([]);
+            setMapCenter({ lat: 52.2045, lng: 0.1190 });
+            setZoom(17);
+            setShowResetConfirm(false);
+            localStorage.clear();
+          };
+
+          return (
+            <div className="flex flex-col h-screen bg-[#f8f9fa] font-sans text-slate-900 overflow-hidden relative select-none">
+              <div className="absolute inset-0 z-0 overflow-hidden">
+                <iframe
+                  width="100%"
+                  height="100%"
+                  frameBorder="0"
+                  style={{ 
+                    border: 0, 
+                    filter: 'contrast(1.1) brightness(0.9)',
+                    pointerEvents: 'none',
+                    transform: `scale(1.5)`
+                  }}
+                  src={`https://www.google.com/maps/embed?pb=!1m14!1m12!1m3!1d2000!2d${mapCenter.lng}!3d${mapCenter.lat}!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!5e0!3m2!1sen!2suk!4v1710000000000!5m2!1sen!2suk`}
+                  allowFullScreen
+                ></iframe>
+              </div>
+
+              <div 
+                ref={mapContainerRef}
+                className="absolute inset-0 z-10 cursor-grab active:cursor-grabbing"
+                onMouseDown={handleDragStart}
+                onMouseMove={handleDragMove}
+                onMouseUp={handleDragEnd}
+                onMouseLeave={handleDragEnd}
+                onTouchStart={handleDragStart}
+                onTouchMove={handleDragMove}
+                onTouchEnd={handleDragEnd}
+              >
+                {CAMBRIDGE_STOPS.map((stop) => {
+                  const isVisited = visited.includes(stop.id);
+                  const isSelected = selectedStar?.id === stop.id;
+                  const pos = getPixelPosition(stop.lat, stop.lng);
+
+                  return (
+                    <div 
+                      key={stop.id} 
+                      className="absolute pointer-events-auto"
+                      style={{ left: pos.x, top: pos.y }}
+                    >
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isVisited) {
+                            setActiveInfo(stop); // Show info if already visited
+                          } else {
+                            setSelectedStar(isSelected ? null : stop);
+                          }
+                        }}
+                        className="flex flex-col items-center transform -translate-x-1/2 -translate-y-1/2"
+                      >
+                        {isSelected && (
+                          <div className="mb-2 bg-white px-3 py-1.5 rounded-xl shadow-2xl border-2 border-indigo-600">
+                            <span className="text-xs font-black whitespace-nowrap">{stop.name}</span>
+                          </div>
+                        )}
+                        
+                        <div className={`flex items-center justify-center p-2 rounded-full border-2 transition-all shadow-lg ${
+                          isVisited 
+                            ? 'bg-green-500 text-white border-white' 
+                            : isSelected 
+                              ? 'bg-indigo-600 text-white border-white scale-125'
+                              : 'bg-yellow-400 text-slate-900 border-white'
+                        }`}>
+                            <Icon name={isVisited ? "check_circle" : "star"} className="text-[20px]" />
+                        </div>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <header className="relative z-20 bg-white/90 backdrop-blur-md p-4 m-4 rounded-2xl shadow-xl flex items-center justify-between border border-white/50">
+                <div className="flex items-center gap-2">
+                  <div className="bg-indigo-600 p-1.5 rounded-lg text-white flex items-center">
+                    <Icon name="school" />
+                  </div>
+                  <h1 className="text-lg font-black tracking-tighter text-indigo-900 italic">CAMBRIDGE MAP</h1>
+                </div>
+                <div className="flex items-center gap-2">
+                   <button onClick={() => setShowResetConfirm(true)} className="p-2 text-slate-400 hover:text-red-500 transition-colors flex items-center">
+                    <Icon name="history" />
+                  </button>
+                  <div className="text-[10px] font-black bg-green-100 text-green-700 px-3 py-1 rounded-full border border-green-200 uppercase">
+                    {visited.length} / {CAMBRIDGE_STOPS.length} VISITED
+                  </div>
+                </div>
+              </header>
+
+              <div className="absolute right-6 top-24 z-20 flex flex-col gap-3">
+                <button onClick={() => setZoom(z => Math.min(z + 1, 19))} className="p-3 bg-white rounded-xl shadow-lg text-slate-600 active:scale-95 transition-transform flex items-center">
+                    <Icon name="add" />
+                </button>
+                <button onClick={() => setZoom(z => Math.max(z - 1, 15))} className="p-3 bg-white rounded-xl shadow-lg text-slate-600 active:scale-95 transition-transform flex items-center">
+                    <Icon name="remove" />
+                </button>
+                <button 
+                  onClick={findRandom} 
+                  className="p-3 bg-indigo-600 rounded-xl shadow-lg text-white active:scale-95 transition-transform flex items-center justify-center"
+                >
+                  <Icon name="search" />
+                </button>
+              </div>
+
+              {selectedStar && !visited.includes(selectedStar.id) && (
+                <div className="absolute bottom-28 left-4 right-4 z-30">
+                  <div className="bg-white p-5 rounded-[2rem] shadow-2xl border border-indigo-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-indigo-50 p-3 rounded-2xl flex items-center">
+                        <Icon name="near_me" className="text-indigo-600" />
+                      </div>
+                      <h3 className="font-bold text-slate-800 text-sm leading-none">{selectedStar.name}</h3>
+                    </div>
+                    <button 
+                      onClick={() => setConfirmingStop(selectedStar)}
+                      className="bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-black text-sm shadow-xl"
+                    >
+                      Check In
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showResetConfirm && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+                  <div className="bg-white rounded-[2.5rem] p-8 w-full max-w-xs shadow-2xl text-center">
+                    <h3 className="text-2xl font-black mb-2 text-slate-900">Reset Map?</h3>
+                    <p className="text-slate-500 mb-6 text-sm">This will clear all your progress.</p>
+                    <div className="flex flex-col gap-3">
+                      <button onClick={resetProgress} className="w-full py-4 bg-red-500 text-white font-bold rounded-2xl shadow-lg">Reset Everything</button>
+                      <button onClick={() => setShowResetConfirm(false)} className="w-full py-4 bg-slate-100 text-slate-600 font-bold rounded-2xl">Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {confirmingStop && (
+                <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 backdrop-blur-sm">
+                  <div className="bg-white w-full max-w-md rounded-t-[3rem] p-10 shadow-2xl">
+                    <h3 className="text-3xl font-black text-center mb-3 italic tracking-tight text-slate-900">Are you here?</h3>
+                    <p className="text-center text-slate-500 mb-10 px-6">
+                      Confirm you are at <span className="text-indigo-600 font-bold">{confirmingStop.name}</span>.
+                    </p>
+                    <div className="flex flex-col gap-4">
+                      <button onClick={() => completeStop(confirmingStop)} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] text-lg">Yes, Check In</button>
+                      <button onClick={() => setConfirmingStop(null)} className="w-full bg-slate-50 text-slate-400 font-bold py-5 rounded-[1.5rem]">Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeInfo && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
+                  <div className="bg-white rounded-[3.5rem] w-full max-w-md overflow-hidden shadow-2xl relative">
+                    <button onClick={() => setActiveInfo(null)} className="absolute top-8 right-8 bg-black text-white p-2 rounded-full z-10 scale-125 flex items-center">
+                        <Icon name="close" />
+                    </button>
+                    <img src={activeInfo.image} alt={activeInfo.name} className="h-80 w-full object-cover" />
+                    <div className="p-10 text-center">
+                      <h2 className="text-4xl font-black mb-5 leading-none tracking-tighter italic text-slate-900">{activeInfo.name}</h2>
+                      <p className="text-slate-500 leading-relaxed text-lg mb-10">{activeInfo.info}</p>
+                      <button onClick={() => setActiveInfo(null)} className="w-full bg-slate-900 text-white font-black py-6 rounded-[2rem]">Continue Adventure</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <nav className="fixed bottom-6 left-6 right-6 bg-white/95 backdrop-blur-xl border border-white/50 px-10 py-6 flex justify-around items-center z-20 rounded-[2.5rem] shadow-2xl">
+                <div className="flex flex-col items-center gap-1 text-indigo-600">
+                    <Icon name="map" className="text-[28px]" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Guide</span>
+                </div>
+                <div className="flex flex-col items-center gap-1 text-slate-300">
+                    <Icon name="restaurant" className="text-[28px]" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Eat</span>
+                </div>
+                <div className="flex flex-col items-center gap-1 text-slate-300">
+                    <Icon name="hotel" className="text-[28px]" />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Stay</span>
+                </div>
+              </nav>
+            </div>
+          );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
